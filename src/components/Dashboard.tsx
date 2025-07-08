@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LogOut, User, Shield, Clock, Users, ChefHat } from 'lucide-react';
@@ -7,9 +7,12 @@ import { useToast } from '@/hooks/use-toast';
 import TableGrid from './TableGrid';
 import MenuSelection from './MenuSelection';
 import AdminOrders from './AdminOrders';
+import { User as SupabaseUser } from '@supabase/supabase-js';
+import { supabase } from '@/integrations/supabase/client';
 
 interface DashboardProps {
   onLogout: () => void;
+  user: SupabaseUser;
 }
 
 interface Table {
@@ -19,10 +22,34 @@ interface Table {
   status: string;
 }
 
-const Dashboard = ({ onLogout }: DashboardProps) => {
+const Dashboard = ({ onLogout, user }: DashboardProps) => {
   const { toast } = useToast();
   const [currentView, setCurrentView] = useState<'main' | 'tables' | 'menu' | 'admin'>('main');
   const [selectedTable, setSelectedTable] = useState<Table | null>(null);
+  const [userProfile, setUserProfile] = useState<any>(null);
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, [user]);
+
+  const fetchUserProfile = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', user.id)
+        .single();
+
+      if (error && error.code !== 'PGRST116') {
+        console.error('Error fetching profile:', error);
+        return;
+      }
+      
+      setUserProfile(data);
+    } catch (error) {
+      console.error('Profile fetch error:', error);
+    }
+  };
 
   const handleLogout = () => {
     toast({
@@ -55,13 +82,23 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const token = localStorage.getItem('authToken');
   const userData = token ? JSON.parse(atob(token.split('.')[1])) : null;
 
+  // Determine if user is admin
+  const isAdmin = userProfile?.role === 'admin';
+
   return (
     <div className="min-h-screen p-6">
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">Restaurant Management</h1>
-            <p className="text-gray-300">Welcome, {userData?.email || 'User'}!</p>
+            <p className="text-gray-300">
+              Welcome, {userProfile?.full_name || user.email}! 
+              {userProfile?.role && (
+                <span className="ml-2 px-2 py-1 bg-blue-500/20 text-blue-300 rounded text-sm">
+                  {userProfile.role.charAt(0).toUpperCase() + userProfile.role.slice(1)}
+                </span>
+              )}
+            </p>
           </div>
           <div className="flex gap-2">
             {currentView !== 'main' && (
@@ -108,25 +145,27 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 </CardContent>
               </Card>
 
-              <Card 
-                className="backdrop-blur-sm bg-white/10 border-white/20 hover:bg-white/20 transition-all cursor-pointer"
-                onClick={() => setCurrentView('admin')}
-              >
-                <CardHeader>
-                  <CardTitle className="flex items-center text-white">
-                    <ChefHat className="w-5 h-5 mr-2" />
-                    Admin Orders
-                  </CardTitle>
-                  <CardDescription className="text-gray-300">
-                    Manage active orders and kitchen
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button className="w-full">
-                    View Orders
-                  </Button>
-                </CardContent>
-              </Card>
+              {(isAdmin || !userProfile) && (
+                <Card 
+                  className="backdrop-blur-sm bg-white/10 border-white/20 hover:bg-white/20 transition-all cursor-pointer"
+                  onClick={() => setCurrentView('admin')}
+                >
+                  <CardHeader>
+                    <CardTitle className="flex items-center text-white">
+                      <ChefHat className="w-5 h-5 mr-2" />
+                      Admin Orders
+                    </CardTitle>
+                    <CardDescription className="text-gray-300">
+                      Manage active orders and kitchen
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <Button className="w-full">
+                      View Orders
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
 
               <Card className="backdrop-blur-sm bg-white/10 border-white/20">
                 <CardHeader>
@@ -138,10 +177,10 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
                 <CardContent>
                   <div className="space-y-2">
                     <p className="text-gray-300">
-                      <span className="font-medium">Email:</span> {userData?.email || 'N/A'}
+                      <span className="font-medium">Email:</span> {user?.email || 'N/A'}
                     </p>
                     <p className="text-gray-300">
-                      <span className="font-medium">Role:</span> {userData?.role || 'Waiter'}
+                      <span className="font-medium">Role:</span> {userProfile?.role?.charAt(0).toUpperCase() + userProfile?.role?.slice(1) || 'Loading...'}
                     </p>
                     <p className="text-gray-300">
                       <span className="font-medium">Status:</span> 
@@ -166,7 +205,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
           />
         )}
 
-        {currentView === 'admin' && (
+        {currentView === 'admin' && (isAdmin || !userProfile) && (
           <AdminOrders />
         )}
       </div>
